@@ -22,12 +22,20 @@ class Semiconductor:
         """
 
         """
-        # default parameters correspond to the room temperature
+        # Semiconductor instance always has some definite temperature.
         self._T = 300
-        self._Eg = 0.8
+        self._kT = k_B_eV * self._T
+        # Temperature dependence of the bandgap is defined using following parameters
+        self._E0 = 0.941  # eV
+        self._K = 0.138  # eV
+        self._QE = 214  # K
+        # To define Urbach edge, additional parameters are needed.
+        self._sU = 1.49
+        self._X = 9.13
+        # Effective density of states in the allowed bands at RT.
         self._NC_300 = 3.9e21
         self._NV_300 = 3.9e21
-        self._kT = k_B_eV * self._T
+        # Finally, the very essence of the model --- DoS bands.
         self.vbt = vbt
         self.cbt = cbt
         self.acceptor = acceptor
@@ -44,11 +52,11 @@ class Semiconductor:
 
     @property
     def Eg(self):
-        return self._Eg
+        return self._E0 - self._K / (math.exp(self._QE / self._T) - 1)
 
-    @Eg.setter
-    def Eg(self, value):
-        self._Eg = value
+    @property
+    def EU(self):
+        return k_B_eV * self._QE / self._sU * ((1 + self._X) / 2 + 1 / (math.exp(self._QE / self._T) - 1))
 
     @property
     def NC(self):
@@ -60,10 +68,10 @@ class Semiconductor:
 
     @property
     def ni(self):
-        return math.sqrt(self.NC * self.NV) * math.exp(-self._Eg / (2 * self._kT))
+        return math.sqrt(self.NC * self.NV) * math.exp(-self.Eg / (2 * self._kT))
 
     def n1(self, energy: float):
-        return self.NC * math.exp((energy - self._Eg) / self._kT)
+        return self.NC * math.exp((energy - self.Eg) / self._kT)
 
     def p1(self, energy: float):
         return self.NV * math.exp(-energy / self._kT)
@@ -145,13 +153,3 @@ class Semiconductor:
         res = quad(integrand, 0, self.Eg)
         return res[0] * prefactor
 
-
-if __name__ == '__main__':
-    gst = Semiconductor()
-    print(gst.vbt.N)
-    print(gst.vbt.occupied(lambda e: 1.0))
-    print(gst.cbt.N)
-    print(gst.cbt.occupied(lambda e: 1.0))
-    print(gst.vth)
-    print(f'EF0 = {gst.solve_equilibrium():.3f} eV')
-    gst.solve_steady_state(5e18 * 1e0)  # cm^-3 s^-1
