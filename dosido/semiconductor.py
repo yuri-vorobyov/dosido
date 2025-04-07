@@ -5,33 +5,40 @@ Length in cm.
 Temperature in K.
 """
 import math
-from typing import List
 
 import numpy as np
-import scipy.optimize
 from scipy.integrate import quad
 from scipy.optimize import root, root_scalar
+
 from dosido.constants import k_B, k_B_eV
 from dosido.constants import m as m0
-from dosido.dos_bands import BandTail, AllowedBand, ChargedState, GaussianDefect, LocalisedStatesBand
+from dosido.dos_bands import BandTail, GaussianDefect, LocalisedStatesBand
 
 
-class Semiconductor:
+class TemperatureDependentParams:
 
-    def __init__(self, vbt: BandTail, cbt: BandTail, acceptor: GaussianDefect, donor: GaussianDefect):
-        """
-
-        """
-        # default parameters correspond to the room temperature
-        self._T = 300
-        self._Eg = 0.8
-        self._NC_300 = 3.9e21
-        self._NV_300 = 3.9e21
-        self._kT = k_B_eV * self._T
-        self.vbt = vbt
-        self.cbt = cbt
-        self.acceptor = acceptor
-        self.donor = donor
+    def __init__(self, T: float, NC_300: float, NV_300: float, E0: float, K: float, QE: float, sU: float, X: float):
+        # Temperature dependence of effective density of states.
+        self._NC_300 = NC_300
+        self._NV_300 = NV_300
+        # Temperature dependence of the bandgap is defined using following parameters
+        self._E0 = E0  # eV
+        self._K = K  # eV
+        self._QE = QE  # K
+        # To define Urbach edge, additional parameters are needed.
+        self._sU = sU
+        self._X = X
+        # Temperature dependence of band tails requires some additional scaling.
+        self.T = 300.0
+        gammaV_300 = 30e-3  # eV
+        n = 4.0
+        gammaC_300 = (self.EU ** n - gammaV_300 ** n) ** (1 / n)
+        EU_300 = self.EU
+        self._betaC = gammaC_300 / EU_300
+        self._betaV = gammaV_300 / EU_300
+        # Finally, fix the value of temperature as provided by User.
+        self._T = T
+        self._kT = k_B_eV * T
 
     @property
     def T(self):
@@ -40,59 +47,85 @@ class Semiconductor:
     @T.setter
     def T(self, value):
         self._T = value
-        self._kT = k_B_eV * self._T
+        self._kT = k_B_eV * value
 
     @property
-    def Eg(self):
-        return self._Eg
-
-    @Eg.setter
-    def Eg(self, value):
-        self._Eg = value
-
-    @property
-    def NC(self):
-        return self._NC_300 / 300 ** 1.5 * self._T ** 1.5
-
-    @property
-    def NV(self):
-        return self._NV_300 / 300 ** 1.5 * self._T ** 1.5
-
-    @property
-    def ni(self):
-        return math.sqrt(self.NC * self.NV) * math.exp(-self._Eg / (2 * self._kT))
-
-    def n1(self, energy: float):
-        return self.NC * math.exp((energy - self._Eg) / self._kT)
-
-    def p1(self, energy: float):
-        return self.NV * math.exp(-energy / self._kT)
+    def kT(self):
+        return self._kT
 
     @property
     def vth(self):
         return math.sqrt(3 * k_B * self._T / m0) * 100.0
 
+    @property
+    def NC_NV(self):
+        den = 300 ** 1.5
+        num = self._T ** 1.5
+        return self._NC_300 / den * num, self._NV_300 / den * num
+
+    @property
+    def Eg(self):
+        return self._E0 - self._K / (math.exp(self._QE / self._T) - 1)
+
+    @property
+    def EU(self):
+        return k_B_eV * self._QE / self._sU * ((1 + self._X) / 2 + 1 / (math.exp(self._QE / self._T) - 1))
+
+    @property
+    def gammas(self):
+        EU = self.EU
+        return self._betaC * EU, self._betaV * EU
+
+    @property
+    def ni(self):
+        NC, NV = self.NC_NV
+        return math.sqrt(NC * NV) * math.exp(-self.Eg / (2 * self._kT))
+
+    def n1_p1(self, energy: float):
+        NC, NV = self.NC_NV
+        return NC * math.exp((energy - self.Eg) / self._kT), NV * math.exp(-energy / self._kT)
+
+
+class Semiconductor:
+
+    def __init__(self, tdp: TemperatureDependentParams, vbt: BandTail, cbt: BandTail, acceptor: GaussianDefect, donor: GaussianDefect):
+        """
+
+        """
+        # Semiconductor instance always has some definite temperature.
+        self.tdp = tdp
+        self.tdp.T = 300.0
+        # The very essence of the model --- DoS bands.
+        self.vbt = vbt
+        self.cbt = cbt
+        self.cbt.gamma, self.vbt.gamma = self.tdp.gammas
+        self.acceptor = acceptor
+        self.donor = donor
+
     def solve_equilibrium(self):
         """
         Calculate the equilibrium position of Fermi level.
         """
+        kT = self.tdp.kT
+        NC, NV = self.tdp.NC_NV
+
         def fun(x):
             """
             Calculates the total charge density as a function of x:
             x = exp((EF - EV) / kT)
             """
-            p0 = self.NV / x
-            n0 = -self.NC * math.exp(-self.Eg / self._kT) * x
-            pt = self.vbt.charge(lambda E: 1 / (1 + math.exp(E / self._kT) / x))
-            nt = self.cbt.charge(lambda E: 1 / (1 + math.exp(E / self._kT) / x))
-            qD = self.donor.charge(lambda E: 1 / (1 + math.exp(E / self._kT) / x))
-            qA = self.acceptor.charge(lambda E: 1 / (1 + math.exp(E / self._kT) / x))
+            p0 = NV / x
+            n0 = -NC * math.exp(-self.tdp.Eg / kT) * x
+            pt = self.vbt.charge(lambda E: 1 / (1 + math.exp(E / kT) / x))
+            nt = self.cbt.charge(lambda E: 1 / (1 + math.exp(E / kT) / x))
+            qD = self.donor.charge(lambda E: 1 / (1 + math.exp(E / kT) / x))
+            qA = self.acceptor.charge(lambda E: 1 / (1 + math.exp(E / kT) / x))
             return p0 + n0 + pt + nt + qD + qA
 
-        sol = root_scalar(fun, bracket=[1, math.exp(self.Eg / self._kT)])
+        sol = root_scalar(fun, bracket=[1, math.exp(self.tdp.Eg / kT)])
         if not sol.converged:
             raise RuntimeError(print(sol))
-        EF0 = math.log(sol.root) * self._kT
+        EF0 = math.log(sol.root) * kT
         return EF0
 
     def solve_steady_state(self, G: float):
@@ -145,13 +178,3 @@ class Semiconductor:
         res = quad(integrand, 0, self.Eg)
         return res[0] * prefactor
 
-
-if __name__ == '__main__':
-    gst = Semiconductor()
-    print(gst.vbt.N)
-    print(gst.vbt.occupied(lambda e: 1.0))
-    print(gst.cbt.N)
-    print(gst.cbt.occupied(lambda e: 1.0))
-    print(gst.vth)
-    print(f'EF0 = {gst.solve_equilibrium():.3f} eV')
-    gst.solve_steady_state(5e18 * 1e0)  # cm^-3 s^-1
