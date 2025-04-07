@@ -5,22 +5,19 @@ Length in cm.
 Temperature in K.
 """
 import math
-from typing import List
 
 import numpy as np
-import scipy.optimize
 from scipy.integrate import quad
 from scipy.optimize import root, root_scalar
+
 from dosido.constants import k_B, k_B_eV
 from dosido.constants import m as m0
-from dosido.dos_bands import BandTail, AllowedBand, ChargedState, GaussianDefect, LocalisedStatesBand
+from dosido.dos_bands import BandTail, GaussianDefect, LocalisedStatesBand
 
 
 class TemperatureDependentParams:
 
     def __init__(self, T: float, NC_300: float, NV_300: float, E0: float, K: float, QE: float, sU: float, X: float):
-        self._T = T
-        self._kT = k_B_eV * T
         # Temperature dependence of effective density of states.
         self._NC_300 = NC_300
         self._NV_300 = NV_300
@@ -31,6 +28,17 @@ class TemperatureDependentParams:
         # To define Urbach edge, additional parameters are needed.
         self._sU = sU
         self._X = X
+        # Temperature dependence of band tails requires some additional scaling.
+        self.T = 300.0
+        gammaV_300 = 30e-3  # eV
+        n = 4.0
+        gammaC_300 = (self.EU ** n - gammaV_300 ** n) ** (1 / n)
+        EU_300 = self.EU
+        self._betaC = gammaC_300 / EU_300
+        self._betaV = gammaV_300 / EU_300
+        # Finally, fix the value of temperature as provided by User.
+        self._T = T
+        self._kT = k_B_eV * T
 
     @property
     def T(self):
@@ -65,10 +73,8 @@ class TemperatureDependentParams:
 
     @property
     def gammas(self):
-        gammaV = 30e-3  # eV
-        n = 4.0
-        gammaC = (self.EU ** n - gammaV ** n) ** (1 / n)
-        return gammaC, gammaV
+        EU = self.EU
+        return self._betaC * EU, self._betaV * EU
 
     @property
     def ni(self):
