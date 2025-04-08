@@ -28,14 +28,20 @@ class TemperatureDependentParams:
         # To define Urbach edge, additional parameters are needed.
         self._sU = sU
         self._X = X
-        # Temperature dependence of band tails requires some additional scaling.
+        # Linear scaling is applied to the defect band positions.
+        self.T = 300.0
+        Eg_300 = self.Eg
+        EA_300 = 0.57  # eV
+        ED_300 = 0.25  # eV
+        self._alphaA = EA_300 / Eg_300
+        self._alphaD = ED_300 / Eg_300
+        # Temperature dependence of band tails follows temperature dependence of Urbach tail.
         self.T = 300.0
         gammaV_300 = 30e-3  # eV
-        n = 4.0
-        gammaC_300 = (self.EU ** n - gammaV_300 ** n) ** (1 / n)
-        EU_300 = self.EU
-        self._betaC = gammaC_300 / EU_300
-        self._betaV = gammaV_300 / EU_300
+        gammaC_300 = self.EU
+        self._k_gamma = k_B_eV / self._sU
+        self._b_gamma_C = gammaC_300 - self._k_gamma * 300.0
+        self._b_gamma_V = gammaV_300 - self._k_gamma * 300.0
         # Finally, fix the value of temperature as provided by User.
         self._T = T
         self._kT = k_B_eV * T
@@ -74,7 +80,15 @@ class TemperatureDependentParams:
     @property
     def gammas(self):
         EU = self.EU
-        return self._betaC * EU, self._betaV * EU
+        return self._b_gamma_C + self._k_gamma * self._T, self._b_gamma_V + self._k_gamma * self._T
+
+    @property
+    def EA(self):
+        return self._alphaA * self.Eg
+
+    @property
+    def ED(self):
+        return self._alphaD * self.Eg
 
     @property
     def ni(self):
@@ -92,15 +106,30 @@ class Semiconductor:
         """
 
         """
-        # Semiconductor instance always has some definite temperature.
+        # Temperature dependencies.
         self.tdp = tdp
-        self.tdp.T = 300.0
         # The very essence of the model --- DoS bands.
         self.vbt = vbt
         self.cbt = cbt
-        self.cbt.gamma, self.vbt.gamma = self.tdp.gammas
         self.acceptor = acceptor
         self.donor = donor
+        # Update temperature-dependent parameters for the default temperature.
+        self.T = 300.0
+
+    @property
+    def T(self):
+        return self.tdp.T
+
+    @T.setter
+    def T(self, value):
+        # set new value
+        self.tdp.T = value
+        # recalculate everything depending on it
+        self.vbt.Eg = self.tdp.Eg
+        self.cbt.Eg = self.tdp.Eg
+        self.cbt.gamma, self.vbt.gamma = self.tdp.gammas
+        self.acceptor.E0 = self.tdp.EA
+        self.donor.E0 = self.tdp.ED
 
     def solve_equilibrium(self):
         """
@@ -178,3 +207,7 @@ class Semiconductor:
         res = quad(integrand, 0, self.Eg)
         return res[0] * prefactor
 
+
+if __name__ == '__main__':
+    tdp = TemperatureDependentParams(300, 3.9e21, 3.9e21, 0.941, 0.138, 214, 1.49, 9.13)
+    print(tdp.ED)
