@@ -9,4 +9,4 @@ if __name__ == '__main__':
     donor = GaussianDefect(ChargedState.DONOR, 5e18, 25e-3, 0.25, 2.5e-12, 5.0e-11)
     gst = Semiconductor(tdp, vbt, cbt, acceptor, donor)
     print(f'EF0 = {gst.solve_equilibrium():.3f} eV')
-    # gst.solve_steady_state(5e18 * 1e4)  # cm^-3 s^-1
+    gst.solve_steady_state(5e18 * 1e4)  # cm^-3 s^-1

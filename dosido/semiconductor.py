@@ -28,14 +28,20 @@ class TemperatureDependentParams:
         # To define Urbach edge, additional parameters are needed.
         self._sU = sU
         self._X = X
-        # Temperature dependence of band tails requires some additional scaling.
+        # Linear scaling is applied to the defect band positions.
+        self.T = 300.0
+        Eg_300 = self.Eg
+        EA_300 = 0.57  # eV
+        ED_300 = 0.25  # eV
+        self._alphaA = EA_300 / Eg_300
+        self._alphaD = ED_300 / Eg_300
+        # Temperature dependence of band tails follows temperature dependence of Urbach tail.
         self.T = 300.0
         gammaV_300 = 30e-3  # eV
-        n = 4.0
-        gammaC_300 = (self.EU ** n - gammaV_300 ** n) ** (1 / n)
-        EU_300 = self.EU
-        self._betaC = gammaC_300 / EU_300
-        self._betaV = gammaV_300 / EU_300
+        gammaC_300 = self.EU
+        self._k_gamma = k_B_eV / self._sU
+        self._b_gamma_C = gammaC_300 - self._k_gamma * 300.0
+        self._b_gamma_V = gammaV_300 - self._k_gamma * 300.0
         # Finally, fix the value of temperature as provided by User.
         self._T = T
         self._kT = k_B_eV * T
@@ -74,7 +80,15 @@ class TemperatureDependentParams:
     @property
     def gammas(self):
         EU = self.EU
-        return self._betaC * EU, self._betaV * EU
+        return self._b_gamma_C + self._k_gamma * self._T, self._b_gamma_V + self._k_gamma * self._T
+
+    @property
+    def EA(self):
+        return self._alphaA * self.Eg
+
+    @property
+    def ED(self):
+        return self._alphaD * self.Eg
 
     @property
     def ni(self):
@@ -92,15 +106,30 @@ class Semiconductor:
         """
 
         """
-        # Semiconductor instance always has some definite temperature.
+        # Temperature dependencies.
         self.tdp = tdp
-        self.tdp.T = 300.0
         # The very essence of the model --- DoS bands.
         self.vbt = vbt
         self.cbt = cbt
-        self.cbt.gamma, self.vbt.gamma = self.tdp.gammas
         self.acceptor = acceptor
         self.donor = donor
+        # Update temperature-dependent parameters for the default temperature.
+        self.T = 300.0
+
+    @property
+    def T(self):
+        return self.tdp.T
+
+    @T.setter
+    def T(self, value):
+        # set new value
+        self.tdp.T = value
+        # recalculate everything depending on it
+        self.vbt.Eg = self.tdp.Eg
+        self.cbt.Eg = self.tdp.Eg
+        self.cbt.gamma, self.vbt.gamma = self.tdp.gammas
+        self.acceptor.E0 = self.tdp.EA
+        self.donor.E0 = self.tdp.ED
 
     def solve_equilibrium(self):
         """
@@ -141,10 +170,10 @@ class Semiconductor:
             return G - R
 
         def charge_neutrality(p, n):
-            p_t = self.vbt.charge(lambda E: self.vbt.f_SRH(p, n, self.p1(E), self.n1(E)))
-            n_t = self.cbt.charge(lambda E: self.cbt.f_SRH(p, n, self.p1(E), self.n1(E)))
-            q_D = self.donor.charge(lambda E: self.donor.f_SRH(p, n, self.p1(E), self.n1(E)))
-            q_A = self.acceptor.charge(lambda E: self.acceptor.f_SRH(p, n, self.p1(E), self.n1(E)))
+            p_t = self.vbt.charge(lambda E: self.vbt.f_SRH(p, n, self.tdp.n1_p1(E)[1], self.tdp.n1_p1(E)[0]))
+            n_t = self.cbt.charge(lambda E: self.cbt.f_SRH(p, n, self.tdp.n1_p1(E)[1], self.tdp.n1_p1(E)[0]))
+            q_D = self.donor.charge(lambda E: self.donor.f_SRH(p, n, self.tdp.n1_p1(E)[1], self.tdp.n1_p1(E)[0]))
+            q_A = self.acceptor.charge(lambda E: self.acceptor.f_SRH(p, n, self.tdp.n1_p1(E)[1], self.tdp.n1_p1(E)[0]))
             return p - n + p_t + n_t + q_D + q_A
 
         def f(x):
@@ -153,28 +182,36 @@ class Semiconductor:
 
         # Initial guess is from equilibrium conditions, where the Fermi level is assumed between the donor and
         # acceptor bands.
-        EF0 = 0.4
-        p0 = self.NV * math.exp(-EF0 / self._kT)
-        n0 = self.NC * math.exp(-self._Eg / self._kT) * math.exp(EF0 / self._kT)
+        EF0 = self.solve_equilibrium()
+        NC, NV = self.tdp.NC_NV
+        kT = self.tdp.kT
+        Eg = self.tdp.Eg
+        p0 = NV * math.exp(-EF0 / kT)
+        n0 = NC * math.exp(-Eg / kT) * math.exp(EF0 / kT)
         print(f'initial guess: p0 = {p0:.2g} cm^-3 n0 = {n0:.2g} cm^-3')
         res = root(f, np.array([p0, n0]), tol=1e-12)
         print(res)
         p, n = res.x
-        EFp = -math.log(p / self.NV) * self._kT
-        EFn = math.log(n / (self.NC * math.exp(-self._Eg / self._kT))) * self._kT
+        EFp = -math.log(p / NV) * kT
+        EFn = math.log(n / (NC * math.exp(-Eg / kT))) * kT
         print(f'EFp = {EFp:.3f} eV, EFn = {EFn:.3f} eV')
 
     def _recombination_rate(self, band: LocalisedStatesBand, p: float, n: float):
         """
         Calculate the recombination rate due to the specific band of localised states in the bandgap.
         """
-        prefactor = n * p - self.ni ** 2
+        prefactor = n * p - self.tdp.ni ** 2
 
         def integrand(E: float) -> float:
             num = band.Cn * band.Cp * band.density(E)
-            den = band.Cn * (n + self.n1(E)) + band.Cp * (p + self.p1(E))
+            n1, p1 = self.tdp.n1_p1(E)
+            den = band.Cn * (n + n1) + band.Cp * (p + p1)
             return num / den
 
-        res = quad(integrand, 0, self.Eg)
+        res = quad(integrand, 0, self.tdp.Eg)
         return res[0] * prefactor
 
+
+if __name__ == '__main__':
+    TDP = TemperatureDependentParams(300, 3.9e21, 3.9e21, 0.941, 0.138, 214, 1.49, 9.13)
+    print(TDP.ED)
