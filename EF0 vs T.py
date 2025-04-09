@@ -17,10 +17,10 @@ ax_T.set_xlabel(r'Temperature (°C)')
 ax_T.set_ylabel(r'Fermi level (eV)')
 
 tdp = TemperatureDependentParams(300, 3.9e21, 3.9e21, 0.941, 0.138, 214, 1.49, 9.13)
-vbt = BandTail(AllowedBand.VALENCE, 2e21, 32e-3, tdp.Eg, 5.0e-10, 5.0e-10)
-cbt = BandTail(AllowedBand.CONDUCTION, 2e21, 59e-3, tdp.Eg, 5.0e-12, 5.0e-11)
-acceptor = GaussianDefect(ChargedState.ACCEPTOR, 5e18, 25e-3, 0.57, 3.0e-11, 1.5e-12)
-donor = GaussianDefect(ChargedState.DONOR, 5e18, 25e-3, 0.25, 2.5e-12, 5.0e-11)
+vbt = BandTail(AllowedBand.VALENCE, 2e18, 32e-3, tdp.Eg, 5.0e-10, 5.0e-10)
+cbt = BandTail(AllowedBand.CONDUCTION, 2e18, 59e-3, tdp.Eg, 5.0e-12, 5.0e-11)
+acceptor = GaussianDefect(ChargedState.ACCEPTOR, 5e17, 25e-3, 0.55, 3.0e-11, 1.5e-12)
+donor = GaussianDefect(ChargedState.DONOR, 5e17, 25e-3, 0.24, 2.5e-12, 5.0e-11)
 
 gst = Semiconductor(tdp, vbt, cbt, acceptor, donor)
 temperatures = np.linspace(-70, 60, 50) + 273.15  # K
@@ -32,5 +32,4 @@ for temperature in temperatures:
 
 ax_T.plot(temperatures, EF0s, alpha=0.7)
 
-plt.legend()
 plt.show()

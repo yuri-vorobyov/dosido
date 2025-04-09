@@ -170,10 +170,10 @@ class Semiconductor:
             return G - R
 
         def charge_neutrality(p, n):
-            p_t = self.vbt.charge(lambda E: self.vbt.f_SRH(p, n, self.p1(E), self.n1(E)))
-            n_t = self.cbt.charge(lambda E: self.cbt.f_SRH(p, n, self.p1(E), self.n1(E)))
-            q_D = self.donor.charge(lambda E: self.donor.f_SRH(p, n, self.p1(E), self.n1(E)))
-            q_A = self.acceptor.charge(lambda E: self.acceptor.f_SRH(p, n, self.p1(E), self.n1(E)))
+            p_t = self.vbt.charge(lambda E: self.vbt.f_SRH(p, n, self.tdp.n1_p1(E)[1], self.tdp.n1_p1(E)[0]))
+            n_t = self.cbt.charge(lambda E: self.cbt.f_SRH(p, n, self.tdp.n1_p1(E)[1], self.tdp.n1_p1(E)[0]))
+            q_D = self.donor.charge(lambda E: self.donor.f_SRH(p, n, self.tdp.n1_p1(E)[1], self.tdp.n1_p1(E)[0]))
+            q_A = self.acceptor.charge(lambda E: self.acceptor.f_SRH(p, n, self.tdp.n1_p1(E)[1], self.tdp.n1_p1(E)[0]))
             return p - n + p_t + n_t + q_D + q_A
 
         def f(x):
@@ -182,32 +182,36 @@ class Semiconductor:
 
         # Initial guess is from equilibrium conditions, where the Fermi level is assumed between the donor and
         # acceptor bands.
-        EF0 = 0.4
-        p0 = self.NV * math.exp(-EF0 / self._kT)
-        n0 = self.NC * math.exp(-self._Eg / self._kT) * math.exp(EF0 / self._kT)
+        EF0 = self.solve_equilibrium()
+        NC, NV = self.tdp.NC_NV
+        kT = self.tdp.kT
+        Eg = self.tdp.Eg
+        p0 = NV * math.exp(-EF0 / kT)
+        n0 = NC * math.exp(-Eg / kT) * math.exp(EF0 / kT)
         print(f'initial guess: p0 = {p0:.2g} cm^-3 n0 = {n0:.2g} cm^-3')
         res = root(f, np.array([p0, n0]), tol=1e-12)
         print(res)
         p, n = res.x
-        EFp = -math.log(p / self.NV) * self._kT
-        EFn = math.log(n / (self.NC * math.exp(-self._Eg / self._kT))) * self._kT
+        EFp = -math.log(p / NV) * kT
+        EFn = math.log(n / (NC * math.exp(-Eg / kT))) * kT
         print(f'EFp = {EFp:.3f} eV, EFn = {EFn:.3f} eV')
 
     def _recombination_rate(self, band: LocalisedStatesBand, p: float, n: float):
         """
         Calculate the recombination rate due to the specific band of localised states in the bandgap.
         """
-        prefactor = n * p - self.ni ** 2
+        prefactor = n * p - self.tdp.ni ** 2
 
         def integrand(E: float) -> float:
             num = band.Cn * band.Cp * band.density(E)
-            den = band.Cn * (n + self.n1(E)) + band.Cp * (p + self.p1(E))
+            n1, p1 = self.tdp.n1_p1(E)
+            den = band.Cn * (n + n1) + band.Cp * (p + p1)
             return num / den
 
-        res = quad(integrand, 0, self.Eg)
+        res = quad(integrand, 0, self.tdp.Eg)
         return res[0] * prefactor
 
 
 if __name__ == '__main__':
-    tdp = TemperatureDependentParams(300, 3.9e21, 3.9e21, 0.941, 0.138, 214, 1.49, 9.13)
-    print(tdp.ED)
+    TDP = TemperatureDependentParams(300, 3.9e21, 3.9e21, 0.941, 0.138, 214, 1.49, 9.13)
+    print(TDP.ED)
