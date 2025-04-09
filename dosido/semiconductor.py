@@ -188,13 +188,17 @@ class Semiconductor:
         Eg = self.tdp.Eg
         p0 = NV * math.exp(-EF0 / kT)
         n0 = NC * math.exp(-Eg / kT) * math.exp(EF0 / kT)
-        print(f'initial guess: p0 = {p0:.2g} cm^-3 n0 = {n0:.2g} cm^-3')
+        # print(f'initial guess: p0 = {p0:.2g} cm^-3 n0 = {n0:.2g} cm^-3')
         res = root(f, np.array([p0, n0]), tol=1e-12)
-        print(res)
-        p, n = res.x
-        EFp = -math.log(p / NV) * kT
-        EFn = math.log(n / (NC * math.exp(-Eg / kT))) * kT
-        print(f'EFp = {EFp:.3f} eV, EFn = {EFn:.3f} eV')
+        # print(res)
+        if res.success:
+            p, n = res.x
+            EFp = -math.log(p / NV) * kT
+            EFn = math.log(n / (NC * math.exp(-Eg / kT))) * kT
+            # print(f'EFp = {EFp:.3f} eV, EFn = {EFn:.3f} eV')
+            return EFn, EFp
+        else:
+            raise RuntimeError(res.message)
 
     def _recombination_rate(self, band: LocalisedStatesBand, p: float, n: float):
         """
