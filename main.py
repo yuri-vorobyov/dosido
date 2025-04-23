@@ -8,6 +8,16 @@ if __name__ == '__main__':
     acceptor = GaussianDefect(ChargedState.ACCEPTOR, 5e18, 25e-3, 0.57, 3.0e-11, 1.5e-12)
     donor = GaussianDefect(ChargedState.DONOR, 5e18, 25e-3, 0.25, 2.5e-12, 5.0e-11)
     gst = Semiconductor(tdp, vbt, cbt, acceptor, donor)
-    print(f'EF0 = {gst.solve_equilibrium():.3f} eV')
+
+    # equilibrium state
+    EF0 = gst.solve_equilibrium()
+    print(f'EF0 = {EF0:.3f} eV')
+    print(f'p0 = {gst.p(EF0):.3g} cm^-3')
+    print(f'n0 = {gst.n(EF0):.3g} cm^-3')
+
+    # steady state
     EFn, EFp = gst.solve_steady_state(1e18 * 1e4)  # cm^-3 s^-1
-    print(f'EFp = {EFp:.3f} eV, EFn = {EFn:.3f} eV')
+    print(f'EFp = {EFp:.3f} eV')
+    print(f'EFn = {EFn:.3f} eV')
+    print(f'p = {gst.p(EFp):.3g} cm^-3')
+    print(f'n = {gst.n(EFn):.3g} cm^-3')

@@ -130,6 +130,14 @@ class Semiconductor:
         self.acceptor.E0 = self.tdp.EA
         self.donor.E0 = self.tdp.ED
 
+    def p(self, EFp):
+        _, NV = self.tdp.NC_NV
+        return NV * math.exp(-EFp / self.tdp.kT)
+
+    def n(self, EFn):
+        NC, _ = self.tdp.NC_NV
+        return NC * math.exp((EFn - self.tdp.Eg) / self.tdp.kT)
+
     def solve_equilibrium(self):
         """
         Calculate the equilibrium position of Fermi level.
