@@ -190,14 +190,15 @@ class Semiconductor:
         n0 = NC * math.exp(-Eg / kT) * math.exp(EF0 / kT)
         # print(f'initial guess: p0 = {p0:.2g} cm^-3 n0 = {n0:.2g} cm^-3')
         res = root(f, np.array([p0, n0]), tol=1e-12)
-        # print(res)
         if res.success:
             p, n = res.x
+            # print(f'p = {p:.3g} cm^-3, n = {n:.3g} cm^-3')
             EFp = -math.log(p / NV) * kT
             EFn = math.log(n / (NC * math.exp(-Eg / kT))) * kT
             # print(f'EFp = {EFp:.3f} eV, EFn = {EFn:.3f} eV')
             return EFn, EFp
         else:
+            print(res)
             raise RuntimeError(res.message)
 
     def _recombination_rate(self, band: LocalisedStatesBand, p: float, n: float):
