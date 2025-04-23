@@ -43,8 +43,7 @@ class TemperatureDependentParams:
         self._b_gamma_C = gammaC_300 - self._k_gamma * 300.0
         self._b_gamma_V = gammaV_300 - self._k_gamma * 300.0
         # Finally, fix the value of temperature as provided by User.
-        self._T = T
-        self._kT = k_B_eV * T
+        self.T = T
 
     @property
     def T(self):
