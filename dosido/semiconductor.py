@@ -165,7 +165,7 @@ class Semiconductor:
         EF0 = math.log(sol.root) * kT
         return EF0
 
-    def solve_steady_state(self, G: float):
+    def solve_steady_state(self, G: float, guess=None):
         """
         Solve the system of two equations:
         1. Generation-recombination balance.
@@ -192,23 +192,22 @@ class Semiconductor:
 
         # Initial guess is from equilibrium conditions, where the Fermi level is assumed between the donor and
         # acceptor bands.
-        EF0 = self.solve_equilibrium()
-        NC, NV = self.tdp.NC_NV
-        kT = self.tdp.kT
-        Eg = self.tdp.Eg
-        p0 = NV * math.exp(-EF0 / kT)
-        n0 = NC * math.exp(-Eg / kT) * math.exp(EF0 / kT)
-        # print(f'initial guess: p0 = {p0:.2g} cm^-3 n0 = {n0:.2g} cm^-3')
-        res = root(f, np.array([p0, n0]), tol=1e-12)
+        if guess:
+            x0 = np.array([self.p(guess[0]), self.n(guess[1])])
+        else:
+            EF0 = self.solve_equilibrium()
+            x0 = np.array([self.p(EF0), self.n(EF0)])
+
+        res = root(f, x0, tol=1e-12)
         if res.success:
             p, n = res.x
-            # print(f'p = {p:.3g} cm^-3, n = {n:.3g} cm^-3')
+            NC, NV = self.tdp.NC_NV
+            kT = self.tdp.kT
+            Eg = self.tdp.Eg
             EFp = -math.log(p / NV) * kT
             EFn = math.log(n / (NC * math.exp(-Eg / kT))) * kT
-            # print(f'EFp = {EFp:.3f} eV, EFn = {EFn:.3f} eV')
             return EFn, EFp
         else:
-            print(res)
             raise RuntimeError(res.message)
 
     def _recombination_rate(self, band: LocalisedStatesBand, p: float, n: float):
