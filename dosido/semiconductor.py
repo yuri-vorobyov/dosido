@@ -17,7 +17,7 @@ from dosido.dos_bands import BandTail, GaussianDefect, LocalisedStatesBand
 
 class TemperatureDependentParams:
 
-    def __init__(self, T: float, NC_300: float, NV_300: float, E0: float, K: float, QE: float, sU: float, X: float):
+    def __init__(self, T: float, NC_300: float, NV_300: float, EA_300: float, ED_300: float, E0: float, K: float, QE: float, sU: float, X: float):
         # Temperature dependence of effective density of states.
         self._NC_300 = NC_300
         self._NV_300 = NV_300
@@ -31,8 +31,6 @@ class TemperatureDependentParams:
         # Linear scaling is applied to the defect band positions.
         self.T = 300.0
         Eg_300 = self.Eg
-        EA_300 = 0.57  # eV
-        ED_300 = 0.25  # eV
         self._alphaA = EA_300 / Eg_300
         self._alphaD = ED_300 / Eg_300
         # Temperature dependence of band tails follows temperature dependence of Urbach tail.
