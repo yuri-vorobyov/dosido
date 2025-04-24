@@ -17,7 +17,8 @@ from dosido.dos_bands import BandTail, GaussianDefect, LocalisedStatesBand
 
 class TemperatureDependentParams:
 
-    def __init__(self, T: float, NC_300: float, NV_300: float, EA_300: float, ED_300: float, E0: float, K: float, QE: float, sU: float, X: float):
+    def __init__(self, T: float, NC_300: float, NV_300: float, EA_300: float, ED_300: float, E0: float, K: float,
+                 QE: float, sU: float, X: float):
         # Temperature dependence of effective density of states.
         self._NC_300 = NC_300
         self._NV_300 = NV_300
@@ -99,7 +100,8 @@ class TemperatureDependentParams:
 
 class Semiconductor:
 
-    def __init__(self, tdp: TemperatureDependentParams, vbt: BandTail, cbt: BandTail, acceptor: GaussianDefect, donor: GaussianDefect):
+    def __init__(self, tdp: TemperatureDependentParams, vbt: BandTail, cbt: BandTail, acceptor: GaussianDefect,
+                 donor: GaussianDefect):
         """
 
         """
@@ -139,6 +141,7 @@ class Semiconductor:
     def solve_equilibrium(self):
         """
         Calculate the equilibrium position of Fermi level.
+        Initial guess is not needed here as bracketed method is in use.
         """
         kT = self.tdp.kT
         NC, NV = self.tdp.NC_NV
@@ -164,7 +167,9 @@ class Semiconductor:
 
     def solve_steady_state(self, G: float):
         """
-
+        Solve the system of two equations:
+        1. Generation-recombination balance.
+        2. Charge neutrality.
         """
 
         def generation_recombination_balance(p, n):
