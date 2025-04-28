@@ -19,6 +19,8 @@ if __name__ == '__main__':
 
     temperature = np.linspace(200, 350, 20)
 
+    _EFn, _EFp = 0.0, 0.0
+
     for T in temperature:
         gst.T = T
         print(f'\n{gst.T:.1f} K')
@@ -31,12 +33,16 @@ if __name__ == '__main__':
         n0.append(gst.n(EF0[-1]))
         print(f'n0 = {n0[-1]:.3g} cm^-3')
 
+        # for the very first temperature only equilibrium Fermi level is available
+        if T == temperature[0]:
+            _EFn, _EFp = EF0[-1], EF0[-1]
+
         # steady state
         g = G
         k = 0
         while True:
             try:
-                _EFn, _EFp = gst.solve_steady_state(g)  # cm^-3 s^-1
+                _EFn, _EFp = gst.solve_steady_state(g, (_EFp, _EFn))
                 break
             except RuntimeError:
                 g /= 10
@@ -45,7 +51,7 @@ if __name__ == '__main__':
         # the initial guess.
         for i in range(k):
             g *= 10
-            _EFn, _EFp = gst.solve_steady_state(g, (_EFp, _EFn))  # cm^-3 s^-1
+            _EFn, _EFp = gst.solve_steady_state(g, (_EFp, _EFn))
         EFp.append(_EFp)
         print(f'EFp = {EFp[-1]:.3f} eV')
         EFn.append(_EFn)
