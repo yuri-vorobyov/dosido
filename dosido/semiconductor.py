@@ -222,7 +222,7 @@ class Semiconductor:
             den = band.Cn * (n + n1) + band.Cp * (p + p1)
             return num / den
 
-        res = quad(integrand, 0, self.tdp.Eg)
+        res = quad(integrand, 0, self.tdp.Eg, full_output=True)
         return res[0] * prefactor
 
 

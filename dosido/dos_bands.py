@@ -114,7 +114,7 @@ class GaussianDefect(LocalisedStatesBand):
     def occupied(self, f: Callable[[float], float]) -> float:
         C = 2
         e0, e1 = self._E0 - C * self._eps, self._E0 + C * self._eps
-        res = quad(lambda e: self.density(e) * f(e), e0, e1)
+        res = quad(lambda e: self.density(e) * f(e), e0, e1, full_output=True)
         return res[0]
 
     def charge(self, f: Callable[[float], float]) -> float:
@@ -176,7 +176,7 @@ class BandTail(LocalisedStatesBand):
         return self._g0 * np.exp(dE / self._gamma)
 
     def occupied(self, f: Callable[[float], float]):
-        res = quad(lambda e: self.density(e) * f(e), 0, self._Eg)
+        res = quad(lambda e: self.density(e) * f(e), 0, self._Eg, full_output=True)
         return res[0]
 
     def charge(self, f: Callable[[float], float]):
