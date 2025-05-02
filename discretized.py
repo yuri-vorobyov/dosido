@@ -66,7 +66,7 @@ def solve(material, T, G, guess=None):
     ni = math.sqrt(NC * NV) * math.exp(-Eg / (2 * kT))  # cm^-3
 
     # Computation parameters
-    grid_nodes_count = 200
+    grid_nodes_count = 400
     grid_node_width = Eg / grid_nodes_count  # eV
     E = np.linspace(grid_node_width / 2.0, Eg - grid_node_width / 2.0, grid_nodes_count, dtype=np.float64)
 
@@ -99,6 +99,8 @@ def solve(material, T, G, guess=None):
     if not sol.converged:
         raise RuntimeError(sol.message)
     EF0 = math.log(sol.root) * kT
+    p0 = NV * math.exp(-EF0 / kT)
+    n0 = NC * math.exp((EF0 - Eg) / kT)
 
     def solve_steady_state(G, guess):
         def fun(x):
@@ -135,15 +137,15 @@ def solve(material, T, G, guess=None):
 
         if sol.success:
             p, n = sol.x
-            return True, -math.log(p / NV) * kT, math.log(n / (NC * math.exp(-Eg / kT))) * kT
+            return True, -math.log(p / NV) * kT, math.log(n / (NC * math.exp(-Eg / kT))) * kT, p, n
         else:
-            return False, None, None
+            return False, None, None, None, None
 
     if not guess:
         EFp0, EFn0 = EF0, EF0
     else:
         EFp0, EFn0 = guess
-    success, EFp, EFn = solve_steady_state(G, (EFp0, EFn0))
+    success, EFp, EFn, p, n = solve_steady_state(G, (EFp0, EFn0))
     while not success:
         # looking for a value of generation rate which will provide us with a result (basically, for conditions closer to
         # equilibrium)
@@ -151,14 +153,14 @@ def solve(material, T, G, guess=None):
         div = 2.0
         while not success:
             g /= div
-            success, EFp, EFn = solve_steady_state(g, (EFp0, EFn0))
+            success, EFp, EFn, p, n = solve_steady_state(g, (EFp0, EFn0))
         # once it is found, more suitable initial guess is in our possession --- we could try it
         EFp0, EFn0 = EFp, EFn
-        success, EFp, EFn = solve_steady_state(G, (EFp0, EFn0))
+        success, EFp, EFn, p, n = solve_steady_state(G, (EFp0, EFn0))
         # if `success == True` after that --- solution was found and the cycle will stop
         # if `success == False` ---  cycle will repeat itself again
     
-    return EF0, EFp, EFn
+    return EF0, EFp, EFn, p, n, p0, n0
 
 
 # temperature dependence
@@ -166,16 +168,20 @@ temperature = np.linspace(200, 350, 100)
 EF0 = np.zeros_like(temperature)
 EFp = np.zeros_like(temperature)
 EFn = np.zeros_like(temperature)
+p = np.zeros_like(temperature)
+n = np.zeros_like(temperature)
+p0 = np.zeros_like(temperature)
+n0 = np.zeros_like(temperature)
 
 t0 = time.time()
 
-EF0[0], EFp[0], EFn[0] = solve(material, temperature[0], 1.0e18 * 1.0e4)
+EF0[0], EFp[0], EFn[0], p[0], n[0], p0[0], n0[0] = solve(material, temperature[0], 1.0e18 * 1.0e4)
 for i in range(1, len(temperature)):
     T = temperature[i]
-    EF0[i], EFp[i], EFn[i] = solve(material, T, 1.0e18 * 1.0e4, (EFp[i-1], EFn[i-1]))
+    EF0[i], EFp[i], EFn[i], p[i], n[i], p0[i], n0[i] = solve(material, T, 1.0e18 * 1.0e4, (EFp[i-1], EFn[i-1]))
 
 t1 = time.time()
 print(f'solved in {(t1 - t0) * 1000:.3f} ms')
 
-plt.plot(temperature, EFp)
+plt.plot(temperature, p - p0)
 plt.show()
