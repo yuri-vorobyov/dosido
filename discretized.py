@@ -79,8 +79,11 @@ vbt_N = g0V * np.exp(-E / gamma_V) * grid_node_width
 acceptors_N = C1 * NA / epsA * np.exp(-C2 * ((E - EA) / epsA) ** 2) * grid_node_width
 donors_N = C1 * ND / epsD * np.exp(-C2 * ((E - ED) / epsD) ** 2) * grid_node_width
 
+# some vector constants could be precalculated to improve performance
+exp_E_div_kT = np.exp(E / kT)
 
-def fun(x):
+
+def eq_charge_neutrality(x):
     """
     Calculates the total charge density as a function of x:
     x = exp((EF - EV) / kT)
@@ -89,20 +92,20 @@ def fun(x):
     p0 = NV / x
     n0 = -NC * math.exp(-Eg / kT) * x
     # Fermi-Dirac occupation function
-    FD = 1 / (1 + np.exp(E / kT) / x)
+    FD = 1 / (1 + exp_E_div_kT / x)
     # components of total charge
-    pt = (vbt_N * (1 - FD)).sum()
-    nt = -(cbt_N * FD).sum()
-    qA = -(acceptors_N * FD).sum()
-    qD = (donors_N * (1 - FD)).sum()
+    pt = np.vecdot(vbt_N, 1 - FD)
+    nt = -np.vecdot(cbt_N, FD)
+    qA = -np.vecdot(acceptors_N, FD)
+    qD = np.vecdot(donors_N, 1 - FD)
     return p0 + n0 + pt + nt + qD + qA
 
 
 t0 = time.time()
-sol = root_scalar(fun, bracket=[1, math.exp(Eg / kT)])
+sol = root_scalar(eq_charge_neutrality, bracket=[1, math.exp(Eg / kT)])
 t1 = time.time()
 print(f'`root_scalar` finished in {(t1 - t0) * 1000:.3f} ms')
 if not sol.converged:
     raise RuntimeError(print(sol))
 EF0 = math.log(sol.root) * kT
-print(EF0)
+print(f'EF0 = {EF0:.3f} eV')
