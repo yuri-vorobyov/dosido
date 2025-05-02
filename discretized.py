@@ -10,11 +10,6 @@ k_B_eV = 8.617333262e-5  # eV K^-1
 C1 = 2 * math.sqrt(math.log(2.0) / math.pi)
 C2 = 4 * math.log(2.0)
 
-# Conditions
-T = 200  # K
-kT = k_B_eV * T  # eV
-G = 1e18 * 1e4  # cm^-3 s^-1
-
 material = dict(
     # Temperature dependence of Eg and EU
     Eg_300 = 0.808,  # eV
@@ -47,43 +42,45 @@ material = dict(
     ND = 5e18
 )
 
-# calculated parameters of the material (temperature independent)
-alphaA = material['EA_300'] / material['Eg_300']
-alphaD = material['ED_300'] / material['Eg_300']
-k_gamma = k_B_eV / material['sU']  # eV K^-1
-b_gamma_C = material['gammaC_300'] - k_gamma * 300.0
-b_gamma_V = material['gammaV_300'] - k_gamma * 300.0
 
-# temperature dependent material parameters
-Eg = material['Eg_300'] - material['K'] / material['QE'] * (T - 300.0)  # eV
-EA = alphaA * Eg
-ED = alphaD * Eg
-EU = material['EU_300'] + k_B_eV / material['sU'] * (T - 300.0)  # eV
-gamma_C = b_gamma_C + k_gamma * T
-gamma_V = b_gamma_V + k_gamma * T
-NC = material['NC_300'] * (T / 300) ** 1.5
-NV = material['NV_300'] * (T / 300) ** 1.5
-ni = math.sqrt(NC * NV) * math.exp(-Eg / (2 * kT))  # cm^-3
+def solve(material, T, G):
+    kT = k_B_eV * T  # eV
 
+    # calculated parameters of the material (temperature independent)
+    alphaA = material['EA_300'] / material['Eg_300']
+    alphaD = material['ED_300'] / material['Eg_300']
+    k_gamma = k_B_eV / material['sU']  # eV K^-1
+    b_gamma_C = material['gammaC_300'] - k_gamma * 300.0
+    b_gamma_V = material['gammaV_300'] - k_gamma * 300.0
 
-# Computation parameters
-grid_nodes_count = 200
-grid_node_width = Eg / grid_nodes_count  # eV
-E = np.linspace(grid_node_width / 2.0, Eg - grid_node_width / 2.0, grid_nodes_count, dtype=np.float64)
+    # temperature dependent material parameters
+    Eg = material['Eg_300'] - material['K'] / material['QE'] * (T - 300.0)  # eV
+    EA = alphaA * Eg
+    ED = alphaD * Eg
+    EU = material['EU_300'] + k_B_eV / material['sU'] * (T - 300.0)  # eV
+    gamma_C = b_gamma_C + k_gamma * T
+    gamma_V = b_gamma_V + k_gamma * T
+    NC = material['NC_300'] * (T / 300) ** 1.5
+    NV = material['NV_300'] * (T / 300) ** 1.5
+    ni = math.sqrt(NC * NV) * math.exp(-Eg / (2 * kT))  # cm^-3
 
-# Discretization of DoS
-cbt_N = material['g0C'] * np.exp((E - Eg) / gamma_C) * grid_node_width
-vbt_N = material['g0V'] * np.exp(-E / gamma_V) * grid_node_width
-acceptors_N = C1 * material['NA'] / material['epsA'] * np.exp(-C2 * ((E - EA) / material['epsA']) ** 2) * grid_node_width
-donors_N = C1 * material['ND'] / material['epsD'] * np.exp(-C2 * ((E - ED) / material['epsD']) ** 2) * grid_node_width
+    # Computation parameters
+    grid_nodes_count = 200
+    grid_node_width = Eg / grid_nodes_count  # eV
+    E = np.linspace(grid_node_width / 2.0, Eg - grid_node_width / 2.0, grid_nodes_count, dtype=np.float64)
 
-# some vector constants could be precalculated to improve performance
-exp_E_div_kT = np.exp(E / kT)
-n1 = NC * exp_E_div_kT * math.exp(-Eg / kT)
-p1 = NV / exp_E_div_kT
+    # Discretization of DoS
+    cbt_N = material['g0C'] * np.exp((E - Eg) / gamma_C) * grid_node_width
+    vbt_N = material['g0V'] * np.exp(-E / gamma_V) * grid_node_width
+    acceptors_N = C1 * material['NA'] / material['epsA'] * np.exp(-C2 * ((E - EA) / material['epsA']) ** 2) * grid_node_width
+    donors_N = C1 * material['ND'] / material['epsD'] * np.exp(-C2 * ((E - ED) / material['epsD']) ** 2) * grid_node_width
 
+    # some vector constants could be precalculated to improve performance
+    exp_E_div_kT = np.exp(E / kT)
+    n1 = NC * exp_E_div_kT * math.exp(-Eg / kT)
+    p1 = NV / exp_E_div_kT
 
-def solve_equilibrium():
+    # solve for equilibrium conditions
     def fun(x):
         # mobile charge carriers
         p0 = NV / x
@@ -100,68 +97,70 @@ def solve_equilibrium():
     sol = root_scalar(fun, bracket=[1, math.exp(Eg / kT)])
     if not sol.converged:
         raise RuntimeError(sol.message)
-    return math.log(sol.root) * kT
+    EF0 = math.log(sol.root) * kT
 
+    def solve_steady_state(G, guess):
+        def fun(x):
+            p, n = x
 
-EF0 = solve_equilibrium()
-print(f'EF0 = {EF0:.3f} eV')
+            def fs(Cp, Cn):
+                r = Cn / Cp
+                num_1 = r * n + p1
+                num_2 = Cn
+                den = r * (n + n1) + (p + p1)
+                return num_1 / den, num_2 / den
 
+            fV = fs(material['CpV'], material['CnV'])
+            fC = fs(material['CpC'], material['CnC'])
+            fA = fs(material['CpA'], material['CnA'])
+            fD = fs(material['CpD'], material['CnD'])
 
-def solve_steady_state(G, guess):
-    def fun(x):
-        p, n = x
+            # for charge neutrality condition
+            pt = np.vecdot(vbt_N, 1 - fV[0])
+            nt = -np.vecdot(cbt_N, fC[0])
+            qA = -np.vecdot(acceptors_N, fA[0])
+            qD = np.vecdot(donors_N, 1 - fD[0])
 
-        def fs(Cp, Cn):
-            r = Cn / Cp
-            num_1 = r * n + p1
-            num_2 = Cn
-            den = r * (n + n1) + (p + p1)
-            return num_1 / den, num_2 / den
+            # for generation-recombination equality
+            rV = np.vecdot(vbt_N, fV[1])
+            rC = np.vecdot(cbt_N, fC[1])
+            rA = np.vecdot(acceptors_N, fA[1])
+            rD = np.vecdot(donors_N, fD[1])
 
-        fV = fs(material['CpV'], material['CnV'])
-        fC = fs(material['CpC'], material['CnC'])
-        fA = fs(material['CpA'], material['CnA'])
-        fD = fs(material['CpD'], material['CnD'])
+            return p - n + pt + nt + qA + qD, G - (n * p - ni ** 2) * (rV + rC + rA + rD)
 
-        # for charge neutrality condition
-        pt = np.vecdot(vbt_N, 1 - fV[0])
-        nt = -np.vecdot(cbt_N, fC[0])
-        qA = -np.vecdot(acceptors_N, fA[0])
-        qD = np.vecdot(donors_N, 1 - fD[0])
+        x0 = np.array([NV * math.exp(-guess[0] / kT), NC * math.exp((guess[1] - Eg) / kT)])
+        sol = root(fun, x0)
 
-        # for generation-recombination equality
-        rV = np.vecdot(vbt_N, fV[1])
-        rC = np.vecdot(cbt_N, fC[1])
-        rA = np.vecdot(acceptors_N, fA[1])
-        rD = np.vecdot(donors_N, fD[1])
+        if sol.success:
+            p, n = sol.x
+            return True, -math.log(p / NV) * kT, math.log(n / (NC * math.exp(-Eg / kT))) * kT
+        else:
+            return False, None, None
 
-        return p - n + pt + nt + qA + qD, G - (n * p - ni ** 2) * (rV + rC + rA + rD)
-
-    x0 = np.array([NV * math.exp(-guess[0] / kT), NC * math.exp((guess[1] - Eg) / kT)])
-    sol = root(fun, x0)
-
-    if sol.success:
-        p, n = sol.x
-        return True, -math.log(p / NV) * kT, math.log(n / (NC * math.exp(-Eg / kT))) * kT
-    else:
-        return False, None, None
-
-
-EFp0, EFn0 = EF0, EF0
-success, EFp, EFn = solve_steady_state(G, (EFp0, EFn0))
-while not success:
-    # looking for a value of generation rate which will provide us with a result (basically, for conditions closer to
-    # equilibrium)
-    g = G
-    div = 2.0
-    while not success:
-        g /= div
-        success, EFp, EFn = solve_steady_state(g, (EFp0, EFn0))
-    # once it is found, more suitable initial guess is in our possession --- we could try it
-    EFp0, EFn0 = EFp, EFn
+    EFp0, EFn0 = EF0, EF0
     success, EFp, EFn = solve_steady_state(G, (EFp0, EFn0))
-    # if `success == True` after that --- solution was found and the cycle will stop
-    # if `success == False` ---  cycle will repeat itself again
+    while not success:
+        # looking for a value of generation rate which will provide us with a result (basically, for conditions closer to
+        # equilibrium)
+        g = G
+        div = 2.0
+        while not success:
+            g /= div
+            success, EFp, EFn = solve_steady_state(g, (EFp0, EFn0))
+        # once it is found, more suitable initial guess is in our possession --- we could try it
+        EFp0, EFn0 = EFp, EFn
+        success, EFp, EFn = solve_steady_state(G, (EFp0, EFn0))
+        # if `success == True` after that --- solution was found and the cycle will stop
+        # if `success == False` ---  cycle will repeat itself again
+    
+    return EF0, EFp, EFn
 
+
+t0 = time.time()
+EF0, EFp, EFn = solve(material, 200.0, 1.0e18 * 1.0e4)
+t1 = time.time()
+print(f'solved in {(t1 - t0) * 1000:.3f} ms')
+print(f'EF0 = {EF0:.3f} eV')
 print(f'EFp = {EFp:.3f} eV')
 print(f'EFn = {EFn:.3f} eV')
