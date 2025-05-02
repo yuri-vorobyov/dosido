@@ -1,7 +1,7 @@
 import time
 import math
 import numpy as np
-from scipy.optimize import root_scalar
+from scipy.optimize import root_scalar, root
 
 # Physical constants
 k_B_eV = 8.617333262e-5  # eV K^-1
@@ -13,6 +13,7 @@ C2 = 4 * math.log(2.0)
 # Conditions
 T = 300  # K
 kT = k_B_eV * T  # eV
+G = 1e18 * 1e4  # cm^-3 s^-1
 
 # Material parameters
 E0 = 0.941  # eV
@@ -31,9 +32,13 @@ Eg = bandgap(T)
 # Parameters for defect levels
 epsA = 25e-3  # eV
 epsD = 25e-3  # eV
-Eg_300 = bandgap(300.0)
 EA_300 = 0.57  # eV
 ED_300 = 0.25  # eV
+CpA = 3.0e-11
+CnA = 1.5e-12
+CpD = 2.5e-12
+CnD = 5.0e-11
+Eg_300 = bandgap(300.0)
 alphaA = EA_300 / Eg_300
 alphaD = ED_300 / Eg_300
 EA = alphaA * Eg
@@ -51,6 +56,10 @@ EU = Urbach_tail(T)
 # Parameters for band tails
 g0C = 2e21
 g0V = 2e21
+CpV = 5.0e-10
+CnV = 5.0e-10
+CpC = 5.0e-12
+CnC = 5.0e-11
 EU_300 = Urbach_tail(300.0)
 gammaV_300 = 30e-3  # eV
 gammaC_300 = EU_300
@@ -81,9 +90,11 @@ donors_N = C1 * ND / epsD * np.exp(-C2 * ((E - ED) / epsD) ** 2) * grid_node_wid
 
 # some vector constants could be precalculated to improve performance
 exp_E_div_kT = np.exp(E / kT)
+n1 = NC * exp_E_div_kT * math.exp(-Eg / kT)
+p1 = NV / exp_E_div_kT
 
 
-def eq_charge_neutrality(x):
+def equilibrium(x):
     """
     Calculates the total charge density as a function of x:
     x = exp((EF - EV) / kT)
@@ -102,10 +113,54 @@ def eq_charge_neutrality(x):
 
 
 t0 = time.time()
-sol = root_scalar(eq_charge_neutrality, bracket=[1, math.exp(Eg / kT)])
+sol = root_scalar(equilibrium, bracket=[1, math.exp(Eg / kT)])
 t1 = time.time()
 print(f'`root_scalar` finished in {(t1 - t0) * 1000:.3f} ms')
 if not sol.converged:
-    raise RuntimeError(print(sol))
+    raise RuntimeError(sol.message)
 EF0 = math.log(sol.root) * kT
 print(f'EF0 = {EF0:.3f} eV')
+
+
+def steady_state(x):
+    p, n = x
+
+    def fs(Cp, Cn):
+        r = Cn / Cp
+        num_1 = r * n + p1
+        num_2 = Cn
+        den = r * (n + n1) + (p + p1)
+        return num_1 / den, num_2 / den
+
+    fV = fs(CpV, CnV)
+    fC = fs(CpC, CnC)
+    fA = fs(CpA, CnA)
+    fD = fs(CpD, CnD)
+
+    # for charge neutrality condition
+    pt = np.vecdot(vbt_N, 1 - fV[0])
+    nt = -np.vecdot(cbt_N, fC[0])
+    qA = -np.vecdot(acceptors_N, fA[0])
+    qD = np.vecdot(donors_N, 1 - fD[0])
+
+    # for generation-recombination equality
+    rV = np.vecdot(vbt_N, fV[1])
+    rC = np.vecdot(cbt_N, fC[1])
+    rA = np.vecdot(acceptors_N, fA[1])
+    rD = np.vecdot(donors_N, fD[1])
+
+    return p - n + pt + nt + qA + qD, G - (n * p - ni**2) * (rV + rC + rA + rD)
+
+
+x0 = np.array([NV * math.exp(-EF0 / kT), NC * math.exp((EF0 - Eg) / kT)])
+t0 = time.time()
+sol = root(steady_state, x0)
+t1 = time.time()
+print(f'`root` finished in {(t1 - t0) * 1000:.3f} ms')
+if not sol.success:
+    raise RuntimeError(sol.message)
+p, n = sol.x
+EFp = -math.log(p / NV) * kT
+EFn = math.log(n / (NC * math.exp(-Eg / kT))) * kT
+print(f'EFp = {EFp:.3f} eV')
+print(f'EFn = {EFn:.3f} eV')
