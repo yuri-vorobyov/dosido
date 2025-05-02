@@ -2,6 +2,7 @@ import time
 import math
 import numpy as np
 from scipy.optimize import root_scalar, root
+import matplotlib.pyplot as plt
 
 # Physical constants
 k_B_eV = 8.617333262e-5  # eV K^-1
@@ -43,7 +44,7 @@ material = dict(
 )
 
 
-def solve(material, T, G):
+def solve(material, T, G, guess=None):
     kT = k_B_eV * T  # eV
 
     # calculated parameters of the material (temperature independent)
@@ -138,7 +139,10 @@ def solve(material, T, G):
         else:
             return False, None, None
 
-    EFp0, EFn0 = EF0, EF0
+    if not guess:
+        EFp0, EFn0 = EF0, EF0
+    else:
+        EFp0, EFn0 = guess
     success, EFp, EFn = solve_steady_state(G, (EFp0, EFn0))
     while not success:
         # looking for a value of generation rate which will provide us with a result (basically, for conditions closer to
@@ -157,10 +161,21 @@ def solve(material, T, G):
     return EF0, EFp, EFn
 
 
+# temperature dependence
+temperature = np.linspace(200, 350, 100)
+EF0 = np.zeros_like(temperature)
+EFp = np.zeros_like(temperature)
+EFn = np.zeros_like(temperature)
+
 t0 = time.time()
-EF0, EFp, EFn = solve(material, 200.0, 1.0e18 * 1.0e4)
+
+EF0[0], EFp[0], EFn[0] = solve(material, temperature[0], 1.0e18 * 1.0e4)
+for i in range(1, len(temperature)):
+    T = temperature[i]
+    EF0[i], EFp[i], EFn[i] = solve(material, T, 1.0e18 * 1.0e4, (EFp[i-1], EFn[i-1]))
+
 t1 = time.time()
 print(f'solved in {(t1 - t0) * 1000:.3f} ms')
-print(f'EF0 = {EF0:.3f} eV')
-print(f'EFp = {EFp:.3f} eV')
-print(f'EFn = {EFn:.3f} eV')
+
+plt.plot(temperature, EFp)
+plt.show()
