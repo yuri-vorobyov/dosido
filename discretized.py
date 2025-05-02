@@ -11,20 +11,20 @@ C1 = 2 * math.sqrt(math.log(2.0) / math.pi)
 C2 = 4 * math.log(2.0)
 
 # Conditions
-T = 300  # K
+T = 200  # K
 kT = k_B_eV * T  # eV
 G = 1e18 * 1e4  # cm^-3 s^-1
 
 # Material parameters
-E0 = 0.941  # eV
+Eg_300 = 0.808  # eV
+EU_300 = 0.0746 # eV
 K = 0.138  # eV
 QE = 214  # K
 sU = 1.49
-X = 9.13
 
 
 def bandgap(temperature):
-    return E0 - K / (np.exp(QE / temperature) - 1)  # eV
+    return Eg_300 - K / QE * (temperature - 300.0)  # eV
 
 
 Eg = bandgap(T)
@@ -48,7 +48,7 @@ ND = 5e18
 
 
 def Urbach_tail(temperature):
-    return k_B_eV * QE / sU * ((1 + X) / 2 + 1 / (np.exp(QE / temperature) - 1))  # eV
+    return EU_300 + k_B_eV / sU * (temperature - 300.0)  # eV
 
 
 EU = Urbach_tail(T)
