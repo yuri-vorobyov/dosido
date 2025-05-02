@@ -176,7 +176,7 @@ class Semiconductor:
             R = self._recombination_rate(self.vbt, p, n) + \
                 self._recombination_rate(self.donor, p, n) + \
                 self._recombination_rate(self.acceptor, p, n) + \
-                self._recombination_rate(self.vbt, p, n)
+                self._recombination_rate(self.cbt, p, n)
             return G - R
 
         def charge_neutrality(p, n):
