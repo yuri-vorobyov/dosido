@@ -79,7 +79,6 @@ ni = math.sqrt(NC * NV) * math.exp(-Eg / (2 * kT))  # cm^-3
 # Computation parameters
 grid_nodes_count = 200
 grid_node_width = Eg / grid_nodes_count  # eV
-print(f'w = {grid_node_width * 1000:.2f} meV')
 E = np.linspace(grid_node_width / 2.0, Eg - grid_node_width / 2.0, grid_nodes_count, dtype=np.float64)
 
 # Discretization of DoS
@@ -94,31 +93,27 @@ n1 = NC * exp_E_div_kT * math.exp(-Eg / kT)
 p1 = NV / exp_E_div_kT
 
 
-def equilibrium(x):
-    """
-    Calculates the total charge density as a function of x:
-    x = exp((EF - EV) / kT)
-    """
-    # mobile charge carriers
-    p0 = NV / x
-    n0 = -NC * math.exp(-Eg / kT) * x
-    # Fermi-Dirac occupation function
-    FD = 1 / (1 + exp_E_div_kT / x)
-    # components of total charge
-    pt = np.vecdot(vbt_N, 1 - FD)
-    nt = -np.vecdot(cbt_N, FD)
-    qA = -np.vecdot(acceptors_N, FD)
-    qD = np.vecdot(donors_N, 1 - FD)
-    return p0 + n0 + pt + nt + qD + qA
+def solve_equilibrium():
+    def fun(x):
+        # mobile charge carriers
+        p0 = NV / x
+        n0 = -NC * math.exp(-Eg / kT) * x
+        # Fermi-Dirac occupation function
+        FD = 1 / (1 + exp_E_div_kT / x)
+        # components of total charge
+        pt = np.vecdot(vbt_N, 1 - FD)
+        nt = -np.vecdot(cbt_N, FD)
+        qA = -np.vecdot(acceptors_N, FD)
+        qD = np.vecdot(donors_N, 1 - FD)
+        return p0 + n0 + pt + nt + qD + qA
+
+    sol = root_scalar(fun, bracket=[1, math.exp(Eg / kT)])
+    if not sol.converged:
+        raise RuntimeError(sol.message)
+    return math.log(sol.root) * kT
 
 
-t0 = time.time()
-sol = root_scalar(equilibrium, bracket=[1, math.exp(Eg / kT)])
-t1 = time.time()
-print(f'`root_scalar` finished in {(t1 - t0) * 1000:.3f} ms')
-if not sol.converged:
-    raise RuntimeError(sol.message)
-EF0 = math.log(sol.root) * kT
+EF0 = solve_equilibrium()
 print(f'EF0 = {EF0:.3f} eV')
 
 
@@ -152,8 +147,7 @@ def solve_steady_state(G, guess):
 
         return p - n + pt + nt + qA + qD, G - (n * p - ni ** 2) * (rV + rC + rA + rD)
 
-    EFp0, EFn0 = guess
-    x0 = np.array([NV * math.exp(-EFp0 / kT), NC * math.exp((EFn0 - Eg) / kT)])
+    x0 = np.array([NV * math.exp(-guess[0] / kT), NC * math.exp((guess[1] - Eg) / kT)])
     sol = root(fun, x0)
 
     if sol.success:
