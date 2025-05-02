@@ -15,66 +15,56 @@ T = 200  # K
 kT = k_B_eV * T  # eV
 G = 1e18 * 1e4  # cm^-3 s^-1
 
-# Material parameters
-Eg_300 = 0.808  # eV
-EU_300 = 0.0746 # eV
-K = 0.138  # eV
-QE = 214  # K
-sU = 1.49
+material = dict(
+    # Temperature dependence of Eg and EU
+    Eg_300 = 0.808,  # eV
+    EU_300 = 0.0746, # eV
+    K = 0.138,  # eV
+    QE = 214,  # K
+    sU = 1.49,
+    # Extended states
+    NC_300 = 3.9e21,  # cm^-3
+    NV_300 = 3.9e21,  # cm^-3
+    # Band tails
+    g0C = 2e21,
+    g0V = 2e21,
+    CpV = 5.0e-10,
+    CnV = 5.0e-10,
+    CpC = 5.0e-12,
+    CnC = 5.0e-11,
+    gammaV_300 = 30e-3,  # eV
+    gammaC_300 = 0.0746,  # eV
+    # Defect levels
+    epsA = 25e-3,  # eV
+    epsD = 25e-3,  # eV
+    EA_300 = 0.57,  # eV
+    ED_300 = 0.25,  # eV
+    CpA = 3.0e-11,
+    CnA = 1.5e-12,
+    CpD = 2.5e-12,
+    CnD = 5.0e-11,
+    NA = 5e18,
+    ND = 5e18
+)
 
+# calculated parameters of the material (temperature independent)
+alphaA = material['EA_300'] / material['Eg_300']
+alphaD = material['ED_300'] / material['Eg_300']
+k_gamma = k_B_eV / material['sU']  # eV K^-1
+b_gamma_C = material['gammaC_300'] - k_gamma * 300.0
+b_gamma_V = material['gammaV_300'] - k_gamma * 300.0
 
-def bandgap(temperature):
-    return Eg_300 - K / QE * (temperature - 300.0)  # eV
-
-
-Eg = bandgap(T)
-
-# Parameters for defect levels
-epsA = 25e-3  # eV
-epsD = 25e-3  # eV
-EA_300 = 0.57  # eV
-ED_300 = 0.25  # eV
-CpA = 3.0e-11
-CnA = 1.5e-12
-CpD = 2.5e-12
-CnD = 5.0e-11
-Eg_300 = bandgap(300.0)
-alphaA = EA_300 / Eg_300
-alphaD = ED_300 / Eg_300
+# temperature dependent material parameters
+Eg = material['Eg_300'] - material['K'] / material['QE'] * (T - 300.0)  # eV
 EA = alphaA * Eg
 ED = alphaD * Eg
-NA = 5e18
-ND = 5e18
-
-
-def Urbach_tail(temperature):
-    return EU_300 + k_B_eV / sU * (temperature - 300.0)  # eV
-
-
-EU = Urbach_tail(T)
-
-# Parameters for band tails
-g0C = 2e21
-g0V = 2e21
-CpV = 5.0e-10
-CnV = 5.0e-10
-CpC = 5.0e-12
-CnC = 5.0e-11
-EU_300 = Urbach_tail(300.0)
-gammaV_300 = 30e-3  # eV
-gammaC_300 = EU_300
-k_gamma = k_B_eV / sU  # eV K^-1
-b_gamma_C = gammaC_300 - k_gamma * 300.0
-b_gamma_V = gammaV_300 - k_gamma * 300.0
+EU = material['EU_300'] + k_B_eV / material['sU'] * (T - 300.0)  # eV
 gamma_C = b_gamma_C + k_gamma * T
 gamma_V = b_gamma_V + k_gamma * T
-
-# Parameters for extended states
-NC_300 = 3.9e21  # cm^-3
-NC = NC_300 * (T / 300) ** 1.5
-NV_300 = 3.9e21  # cm^-3
-NV = NV_300 * (T / 300) ** 1.5
+NC = material['NC_300'] * (T / 300) ** 1.5
+NV = material['NV_300'] * (T / 300) ** 1.5
 ni = math.sqrt(NC * NV) * math.exp(-Eg / (2 * kT))  # cm^-3
+
 
 # Computation parameters
 grid_nodes_count = 200
@@ -82,10 +72,10 @@ grid_node_width = Eg / grid_nodes_count  # eV
 E = np.linspace(grid_node_width / 2.0, Eg - grid_node_width / 2.0, grid_nodes_count, dtype=np.float64)
 
 # Discretization of DoS
-cbt_N = g0C * np.exp((E - Eg) / gamma_C) * grid_node_width
-vbt_N = g0V * np.exp(-E / gamma_V) * grid_node_width
-acceptors_N = C1 * NA / epsA * np.exp(-C2 * ((E - EA) / epsA) ** 2) * grid_node_width
-donors_N = C1 * ND / epsD * np.exp(-C2 * ((E - ED) / epsD) ** 2) * grid_node_width
+cbt_N = material['g0C'] * np.exp((E - Eg) / gamma_C) * grid_node_width
+vbt_N = material['g0V'] * np.exp(-E / gamma_V) * grid_node_width
+acceptors_N = C1 * material['NA'] / material['epsA'] * np.exp(-C2 * ((E - EA) / material['epsA']) ** 2) * grid_node_width
+donors_N = C1 * material['ND'] / material['epsD'] * np.exp(-C2 * ((E - ED) / material['epsD']) ** 2) * grid_node_width
 
 # some vector constants could be precalculated to improve performance
 exp_E_div_kT = np.exp(E / kT)
@@ -128,10 +118,10 @@ def solve_steady_state(G, guess):
             den = r * (n + n1) + (p + p1)
             return num_1 / den, num_2 / den
 
-        fV = fs(CpV, CnV)
-        fC = fs(CpC, CnC)
-        fA = fs(CpA, CnA)
-        fD = fs(CpD, CnD)
+        fV = fs(material['CpV'], material['CnV'])
+        fC = fs(material['CpC'], material['CnC'])
+        fA = fs(material['CpA'], material['CnA'])
+        fD = fs(material['CpD'], material['CnD'])
 
         # for charge neutrality condition
         pt = np.vecdot(vbt_N, 1 - fV[0])
